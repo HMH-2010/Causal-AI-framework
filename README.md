@@ -11,9 +11,7 @@ The workflow trains separate DeepSurv models for:
 
 It then estimates potential survival under both treatment strategies and computes the individual treatment effect:
 
-\[
-ITE(t) = \hat{S}_{neoadjuvant}(t \mid X) - \hat{S}_{surgery}(t \mid X)
-\]
+\[ITE(t) = \hat{S}_{neoadjuvant}(t \mid X) - \hat{S}_{surgery}(t \mid X)\]
 
 ## Repository Structure
 
