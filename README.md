@@ -2,8 +2,7 @@
 
 This repository contains the core DeepSurv T-learner implementation for estimating
 potential progression-free survival under surgery and neoadjuvant treatment.
-Two treatment-specific models produce survival probabilities at 12, 24, 36,
-and 60 months:
+Two treatment-specific models produce survival probabilities at 12, 24, 36 months:
 
 ```text
 ITE(t) = S_neoadjuvant(t | X) - S_surgery(t | X)
