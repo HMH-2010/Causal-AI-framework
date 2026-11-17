@@ -13,17 +13,6 @@ Probabilities and ITE are expressed on the 0–1 scale; an ITE of 0.05 means
 a predicted difference of 5 percentage points. No recommendation threshold is
 applied by this core implementation.
 
-## Scope
-
-Only model training and direct ITE prediction are included. The code starts from
-prepared imaging features, numerically encoded clinical covariates, and supplied
-sample weights. Image extraction, source-record processing, propensity-score
-estimation, benchmarking, sensitivity analyses, SHAP, and figure generation are
-outside this repository. This is a core implementation, not a complete pipeline
-for reproducing every manuscript figure or the historical fitted models.
-
-No patient data, patient-level sample weights, or trained model files are hosted
-in this GitHub repository. Trained model bundles will be distributed separately.
 
 ## Files
 
@@ -95,10 +84,7 @@ Weights and features prepared outside this code must not use external outcomes.
 
 The imaging screen follows the local core training configuration: variance
 filtering, weighted univariate Cox **score** tests, then correlation pruning in
-ascending p-value order. The default p-value candidates are 0.10, 0.05, and 0.20;
-if fewer than eight features pass, the top available features are retained before
-correlation pruning. These are training settings, not alternative analysis
-branches; edit them in `config.py` for the intended training specification.
+ascending p-value order. 
 
 The inner selection criterion is unweighted concordance for strictly ordered
 follow-up times, with half credit for equal risk scores. The selected epoch is
@@ -131,24 +117,6 @@ outputs/
     └── neoadjuvant.pt
 ```
 
-Each CSV contains patient identifiers and paired `S_surgery_*m`,
-`S_neoadjuvant_*m`, and `ITE_*m` columns; the OOF file also contains `fold`.
-Model bundles contain network parameters, selected feature names and order,
-fitted imputation/scaling parameters, prediction horizons, and the fitted
-baseline cumulative hazard. These locally generated files are ignored by Git.
-
-## Models hosted separately
-
-**External model download URL: pending publication by the authors.**
-
-After obtaining compatible bundles from the external hosting site, place them in
-a local directory:
-
-```text
-models/
-├── surgery.pt
-└── neoadjuvant.pt
-```
 
 Use both bundles from the same release. They must follow the bundle format
 written by `training.py`; a bare neural-network state dictionary is insufficient
