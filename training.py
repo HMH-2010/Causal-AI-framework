@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import torch
 from scipy.stats import norm
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import ParameterSampler, StratifiedKFold
 
 import config as cfg
 from model import DeepSurv, fit_baseline, weighted_cox_loss
@@ -103,15 +103,24 @@ def fit_preprocessing(frame, feature_columns, threshold):
     return {"columns": columns, "fill": fill.tolist(), "mean": mean.tolist(), "scale": scale.tolist()}
 
 
-def fit_network(frame, preprocessing, device, seed, epochs, validation=None):
+def network_settings(parameters):
+    return {
+        "hidden_dims": tuple(parameters["hidden_dims"]),
+        "dropout": parameters["dropout"], "batch_norm": cfg.BATCH_NORM,
+    }
+
+
+def fit_network(frame, preprocessing, device, seed, epochs, parameters, validation=None):
     set_seed(seed)
     x = torch.as_tensor(transform(frame, preprocessing), device=device)
     times = torch.as_tensor(frame.time.to_numpy(dtype=np.float32), device=device)
     events = torch.as_tensor(frame.event.to_numpy(dtype=np.float32), device=device)
     weights = frame.weight.to_numpy(dtype=np.float32)
     weights = torch.as_tensor(weights / weights.mean(), device=device)
-    model = DeepSurv(x.shape[1], **cfg.NETWORK).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=cfg.LEARNING_RATE, weight_decay=cfg.WEIGHT_DECAY)
+    model = DeepSurv(x.shape[1], **network_settings(parameters)).to(device)
+    optimizer = torch.optim.Adam(
+        model.parameters(), lr=parameters["learning_rate"], weight_decay=parameters["weight_decay"]
+    )
     if validation is not None:
         xv = transform(validation, preprocessing)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -123,7 +132,8 @@ def fit_network(frame, preprocessing, device, seed, epochs, validation=None):
     for epoch in range(1, epochs + 1):
         model.train()
         indices = rng.permutation(len(frame))
-        batches = [indices[i:i + cfg.BATCH_SIZE] for i in range(0, len(frame), cfg.BATCH_SIZE)]
+        batch_size = parameters["batch_size"]
+        batches = [indices[i:i + batch_size] for i in range(0, len(frame), batch_size)]
         if len(batches) > 1 and len(batches[-1]) == 1:
             last = batches.pop()
             batches[-1] = np.concatenate([batches[-1], last])
@@ -147,37 +157,48 @@ def fit_network(frame, preprocessing, device, seed, epochs, validation=None):
 
 def select_configuration(frame, feature_columns, device, seed):
     folds = list(StratifiedKFold(cfg.INNER_FOLDS, shuffle=True, random_state=seed).split(frame, frame.event))
-    candidates = []
-    for candidate, threshold in enumerate(cfg.P_THRESHOLDS):
+    candidates = list(ParameterSampler(
+        cfg.SEARCH_SPACE, n_iter=cfg.SEARCH_ITERATIONS, random_state=cfg.SEARCH_SEED,
+    ))
+    results = []
+    for candidate, parameters in enumerate(candidates):
         scores, epochs = [], []
         for fold, (train, valid) in enumerate(folds):
             inner_train, inner_valid = frame.iloc[train], frame.iloc[valid]
-            preprocessing = fit_preprocessing(inner_train, feature_columns, threshold)
+            preprocessing = fit_preprocessing(inner_train, feature_columns, parameters["p_threshold"])
             _, score, epoch = fit_network(
-                inner_train, preprocessing, device, seed + 100 * (fold + 1) + candidate,
-                cfg.MAX_EPOCHS, inner_valid,
+                inner_train, preprocessing, device, seed + 100 * (fold + 1),
+                cfg.MAX_EPOCHS, parameters, inner_valid,
             )
-            scores.append(score)
-            epochs.append(epoch)
-        candidates.append((float(np.mean(scores)), threshold, int(np.median(epochs))))
-    _, threshold, epochs = sorted(candidates, key=lambda row: (-row[0], row[1]))[0]
-    return threshold, epochs
+            scores.append(float(score))
+            epochs.append(int(epoch))
+        results.append({
+            "parameters": parameters, "mean_cindex": float(np.mean(scores)),
+            "fold_cindices": scores, "fold_best_epochs": epochs,
+            "epochs": int(np.median(epochs)),
+        })
+        print(f"Inner candidate {candidate + 1}/{len(candidates)}: C-index={np.mean(scores):.4f}", flush=True)
+    # Ties retain the first configuration in the reproducibly sampled order.
+    best = max(results, key=lambda result: result["mean_cindex"])
+    return best["parameters"], best["epochs"], results
 
 
 def fit_arm(frame, feature_columns, device, seed):
-    threshold, epochs = select_configuration(frame, feature_columns, device, seed)
-    preprocessing = fit_preprocessing(frame, feature_columns, threshold)
-    model, _, _ = fit_network(frame, preprocessing, device, seed + 90000, epochs)
+    parameters, epochs, search_results = select_configuration(frame, feature_columns, device, seed)
+    preprocessing = fit_preprocessing(frame, feature_columns, parameters["p_threshold"])
+    model, _, _ = fit_network(frame, preprocessing, device, seed + 90000, epochs, parameters)
     scores = predict_scores(model, transform(frame, preprocessing), device)
     event_times, log_hazard = fit_baseline(
         frame.time.to_numpy(), frame.event.to_numpy(), scores, frame.weight.to_numpy()
     )
     return {
         "state_dict": {k: v.detach().cpu() for k, v in model.state_dict().items()},
-        "network": cfg.NETWORK, "preprocessing": preprocessing,
+        "network": network_settings(parameters), "preprocessing": preprocessing,
         "time_points": list(cfg.TIME_POINTS), "event_times": event_times.tolist(),
         "log_cumulative_hazard": log_hazard.tolist(),
-        "selected_p": threshold, "epochs": epochs,
+        "selected_p": parameters["p_threshold"], "epochs": epochs,
+        "training_config": parameters, "search_seed": cfg.SEARCH_SEED,
+        "search_results": search_results,
     }
 
 
