@@ -88,51 +88,6 @@ The imaging screen follows the local core training configuration: variance
 filtering, weighted univariate Cox **score** tests, then correlation pruning in
 ascending p-value order.
 
-The default joint search space in `config.py` is:
-
-| Hyperparameter | Candidates |
-| --- | --- |
-| Imaging-screening p-value threshold | 0.10, 0.05, 0.01 |
-| Hidden-layer widths | (64, 32), (128, 64), (128, 64, 32) |
-| Dropout | 0.3, 0.5, 0.7 |
-| Initial learning rate | 0.0001, 0.0003, 0.001 |
-| Weight decay | 0, 0.00001, 0.0001 |
-| Batch size | 32, 64, 128 |
-
-By default, 24 distinct joint configurations are sampled without replacement
-from the 729 combinations using `SEARCH_SEED=42`. The same candidate list is
-used for every outer fold and both treatment arms, while each training split
-selects its own winner. This is a randomized search, not an exhaustive grid
-search; set `SEARCH_ITERATIONS=729` to evaluate all default combinations.
-Only inner validation scores determine the winner. Candidates use the same
-inner folds and per-fold training seeds. Preprocessing is fitted separately
-on each inner training split. Batch normalization remains enabled.
-
-The inner selection criterion is the mean of the best validation C-indices
-across inner folds, using unweighted concordance for strictly ordered follow-up
-times, with half credit for equal risk scores. Ties retain the first sampled
-configuration. The selected epoch is the median inner-fold best epoch for the
-winning configuration. Inner training uses early stopping and learning-rate
-reduction; refitting uses the selected architecture and optimizer settings for
-the selected epoch count, starting at the selected initial learning rate without
-validation-driven scheduling. The final full-development fits repeat this search
-independently in each treatment arm. Search scores are tuning scores, not reported
-validation performance; performance evaluation uses held-out outer-fold or
-external predictions.
-
-The defaults require 24 x 3 = 72 inner fits per training arm/split (864 inner
-fits plus 12 refits across five outer folds and final full-development fitting).
-Edit `SEARCH_SPACE` and `SEARCH_ITERATIONS` to change the computational budget.
-This expanded search changes the training procedure; reproducing prior numerical
-results requires their original code, configuration, and fitted models.
-
-The Cox objective weights both event terms and risk-set denominators. Training
-uses mini-batch risk sets with the selected batch size; the baseline hazard is
-estimated using the full fitted training arm. Tied follow-up times share a common
-risk set using the Breslow convention. Log-space calculations stabilize the
-loss and survival predictions. These implementation details can affect numerical
-results relative to earlier code versions; no equivalence to historical
-manuscript estimates is asserted.
 
 ```bash
 python run.py train --data data.csv --output outputs --device cpu
