@@ -17,7 +17,7 @@ LR_FACTOR = 0.5
 MIN_LR = 1e-6
 
 # Search settings inherited from the local nested-training implementation.
-P_THRESHOLDS = (0.10, 0.05, 0.20)
+P_THRESHOLDS = (0.10, 0.05, 0.01)
 VARIANCE_THRESHOLD = 0.01
 CORRELATION_THRESHOLD = 0.90
 MIN_IMAGE_FEATURES = 8
